@@ -3,3 +3,6 @@ pyinstaller>=6.10
 pytest>=8.0
 pip-audit>=2.7
 pytest-github-actions-annotate-failures>=0.2
+# Pulled in by pip-audit (not by DescTrack). The Python on GitHub's macOS runners
+# ships an older certifi with a revoked certificate authority (PYSEC-2026-4320).
+certifi>=2026.10.19
