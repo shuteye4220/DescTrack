@@ -10,8 +10,11 @@ import re
 import subprocess
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Optional, TypedDict
+
+from .ffmpeg_safety import input_args
 
 
 class MuxError(RuntimeError):
@@ -54,9 +57,9 @@ def _audio_codec_args(output_path: str) -> list[str]:
 
 def _build_args(req: MuxRequest) -> list[str]:
     if req.offset_ms >= 0:
-        ad_input_args = ["-itsoffset", str(req.offset_ms / 1000.0), "-i", req.ad_audio_path]
+        ad_input_args = ["-itsoffset", str(req.offset_ms / 1000.0), *input_args(req.ad_audio_path)]
     else:
-        ad_input_args = ["-ss", str(-req.offset_ms / 1000.0), "-i", req.ad_audio_path]
+        ad_input_args = ["-ss", str(-req.offset_ms / 1000.0), *input_args(req.ad_audio_path)]
 
     if req.chromecast_ready:
         video_codec_args = ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p"]
@@ -67,14 +70,14 @@ def _build_args(req: MuxRequest) -> list[str]:
     faststart = ["-movflags", "+faststart"] if req.chromecast_ready else []
 
     return (
-        ["-y", "-progress", "pipe:1", "-nostats", "-i", req.video_path]
+        ["-nostdin", "-y", "-progress", "pipe:1", "-nostats", *input_args(req.video_path)]
         + ad_input_args
         + ["-map", "0:v:0", "-map", "1:a:0"]
         + video_codec_args
         + audio_codec_args
         + ["-af", "apad", "-t", str(req.video_duration_seconds)]
         + faststart
-        + [req.output_path]
+        + [os.path.abspath(req.output_path)]
     )
 
 
@@ -126,6 +129,7 @@ def run_mux(
 
     process = subprocess.Popen(
         args,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -133,11 +137,18 @@ def run_mux(
         bufsize=1,
     )
 
+    # The last few lines ffmpeg printed, to explain a failure.
+    stderr_tail: deque[str] = deque(maxlen=8)
+
     def pump_stderr():
         assert process.stderr is not None
         for line in process.stderr:
-            if log_cb and line.strip():
-                log_cb(line.rstrip())
+            line = line.rstrip()
+            if not line:
+                continue
+            stderr_tail.append(line)
+            if log_cb:
+                log_cb(line)
 
     stderr_thread = threading.Thread(target=pump_stderr, daemon=True)
     stderr_thread.start()
@@ -161,36 +172,54 @@ def run_mux(
             "speed": last_speed,
         })
 
-    assert process.stdout is not None
-    for raw_line in process.stdout:
-        if cancel_event is not None and cancel_event.is_set():
+    succeeded = False
+    try:
+        assert process.stdout is not None
+        for raw_line in process.stdout:
+            if cancel_event is not None and cancel_event.is_set():
+                raise MuxError("Cancelled.")
+
+            line = raw_line.strip()
+
+            out_time = _parse_out_time_seconds(line)
+            if out_time is not None:
+                last_out_time_seconds = out_time
+                continue
+
+            speed = _parse_speed(line)
+            if speed is not None:
+                last_speed = speed
+                continue
+
+            # ffmpeg's -progress output arrives in blocks of key=value lines,
+            # each block terminated by "progress=continue" (or "progress=end"
+            # for the last one). Report once per block, after out_time and
+            # speed for that block have both been read.
+            if line.startswith("progress="):
+                report_progress()
+
+        process.wait()
+        stderr_thread.join(timeout=2)
+
+        if process.returncode != 0:
+            details = "\n".join(stderr_tail)
+            raise MuxError(
+                f"ffmpeg exited with code {process.returncode}."
+                + (f" Its last messages were:\n{details}" if details else "")
+            )
+        succeeded = True
+    finally:
+        if process.poll() is None:
             process.kill()
-            raise MuxError("Cancelled.")
-
-        line = raw_line.strip()
-
-        out_time = _parse_out_time_seconds(line)
-        if out_time is not None:
-            last_out_time_seconds = out_time
-            continue
-
-        speed = _parse_speed(line)
-        if speed is not None:
-            last_speed = speed
-            continue
-
-        # ffmpeg's -progress output arrives in blocks of key=value lines,
-        # each block terminated by "progress=continue" (or "progress=end"
-        # for the last one). Report once per block, after out_time and
-        # speed for that block have both been read.
-        if line.startswith("progress="):
-            report_progress()
-
-    process.wait()
-    stderr_thread.join(timeout=2)
-
-    if process.returncode != 0:
-        raise MuxError(f"ffmpeg exited with code {process.returncode}. See the activity log above for details.")
+            process.wait()
+        if not succeeded:
+            # Don't leave a truncated "-AD" file behind: it would look like a
+            # finished output and trigger an "already exists" warning next time.
+            try:
+                if os.path.isfile(req.output_path):
+                    os.remove(req.output_path)
+            except OSError:
+                pass
 
     last_out_time_seconds = req.video_duration_seconds
     if progress_cb:

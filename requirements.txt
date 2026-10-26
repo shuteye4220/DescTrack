@@ -1,7 +1,8 @@
-# Runtime
-flask>=3.0
+# Runtime. Minimum versions are the oldest without known security advisories
+# that affect DescTrack (werkzeug 3.1.9 fixes CVE-2026-102598).
+flask>=3.1.3
+werkzeug>=3.1.9
 numpy>=1.26
-requests>=2.31
 pywebview>=5.0
 
 # Linux only: the GTK backend for pywebview. Needs the system packages listed

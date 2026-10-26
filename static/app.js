@@ -832,6 +832,12 @@ async function checkStatus() {
       el.statusBanner.textContent =
         "ffmpeg and/or ffprobe could not be found. Place a portable copy of both next to the app, " +
         "or install ffmpeg so it is on your PATH. See README.md for details.";
+    } else if (status.ffmpeg_outdated) {
+      el.statusBanner.hidden = false;
+      el.statusBanner.textContent =
+        `Your ffmpeg is version ${status.ffmpeg_version}. Versions older than ` +
+        `${status.ffmpeg_recommended_version} have known security bugs that a booby-trapped video ` +
+        "file could trigger. Please update ffmpeg (see README.md). DescTrack will still work.";
     }
   } catch (err) {
     el.statusBanner.hidden = false;

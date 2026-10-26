@@ -53,6 +53,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
+      - name: Check dependencies for known vulnerabilities
+        run: pip-audit --progress-spinner off  # audits everything installed above
+
       - name: Run the tests
         run: python -m pytest -v
 
@@ -60,6 +63,8 @@ jobs:
         run: pyinstaller --noconfirm --clean desctrack.spec
 
       - name: Check the built app starts
+        env:
+          DESCTRACK_PORT: "5891"
         run: |
           case "$RUNNER_OS" in
             Linux)   APP=(xvfb-run -a dbus-run-session -- dist/DescTrack) ;;

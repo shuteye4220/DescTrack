@@ -8,6 +8,7 @@ platform the tests run on. ffmpeg and ffprobe must be installed.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import time
@@ -155,3 +156,111 @@ def test_progress_parsing():
     assert mux._parse_out_time_seconds("out_time=N/A") is None
     assert mux._parse_speed("speed=2.5x") == 2.5
     assert mux._parse_speed("speed=N/A") is None
+
+
+# -- Security ---------------------------------------------------------------
+
+
+def test_cross_site_text_plain_post_is_rejected(client, media):
+    # What any web page can send to 127.0.0.1 without a CORS preflight.
+    response = client.post(
+        "/api/create",
+        data=json.dumps({"video_path": media["video"], "audio_path": media["ad"]}),
+        headers={"Content-Type": "text/plain"},
+    )
+    assert response.status_code == 415
+
+
+def test_foreign_origin_is_rejected(client):
+    response = client.post("/api/output-path", json={"video_path": "/x.mp4"},
+                           headers={"Origin": "https://evil.example"})
+    assert response.status_code == 403
+
+
+def test_null_origin_is_rejected(client):
+    response = client.post("/api/output-path", json={"video_path": "/x.mp4"}, headers={"Origin": "null"})
+    assert response.status_code == 403
+
+
+def test_dns_rebinding_host_is_rejected(client):
+    response = client.get("/api/status", headers={"Host": "evil.example:5891"})
+    assert response.status_code == 403
+
+
+def test_own_origin_is_allowed(client):
+    response = client.post("/api/output-path", json={"video_path": "/x.mp4"},
+                           headers={"Host": "127.0.0.1:5891", "Origin": "http://127.0.0.1:5891"})
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("bad", ["abc", None, True, float("nan"), float("inf"), 10**9])
+def test_bad_numbers_are_rejected(client, media, bad):
+    body = json.dumps({"video_path": media["video"], "audio_path": media["ad"], "offset_ms": bad},
+                      allow_nan=True)
+    response = client.post("/api/preview/prepare", data=body, content_type="application/json")
+    assert response.status_code == 400
+
+
+def test_relative_paths_are_rejected(client):
+    response = client.post("/api/auto-sync", json={"video_path": "-i", "audio_path": "video.mp4"})
+    assert response.status_code == 400
+
+
+def test_reveal_only_opens_desctrack_outputs(client, media):
+    response = client.post("/api/reveal", json={"path": media["video"]})
+    assert response.status_code == 404
+
+
+def test_unexpected_formats_are_refused(tmp_path):
+    from services import media_probe
+
+    # A VobSub index disguised as an MP4: without the format whitelist,
+    # ffmpeg would hand this to the VobSub demuxer (CVE-2026-64830).
+    fake = tmp_path / "movie.mp4"
+    fake.write_text("# VobSub index file, v7\n")
+    with pytest.raises(media_probe.ProbeError):
+        media_probe.get_duration_seconds(FFPROBE, str(fake))
+
+    # An HLS playlist that would make ffmpeg fetch a URL.
+    playlist = tmp_path / "playlist.m3u8"
+    playlist.write_text("#EXTM3U\n#EXTINF:10,\nhttp://127.0.0.1:9/x.ts\n#EXT-X-ENDLIST\n")
+    with pytest.raises(media_probe.ProbeError):
+        media_probe.get_duration_seconds(FFPROBE, str(playlist))
+
+
+def test_failed_render_leaves_no_partial_file(tmp_path, media):
+    out = tmp_path / "out-AD.mp4"
+    req = mux.MuxRequest(FFMPEG, media["video"], media["ad"], str(out), 0, 22.0, False)
+    # Corrupt the request so ffmpeg fails after creating the output.
+    req.ad_audio_path = str(tmp_path / "missing.mp3")
+    with pytest.raises(mux.MuxError):
+        mux.run_mux(req)
+    assert not out.exists()
+
+
+def test_cancelled_render_leaves_no_partial_file(tmp_path, media):
+    import threading
+
+    out = tmp_path / "out-AD.mp4"
+    cancel = threading.Event()
+    cancel.set()
+    req = mux.MuxRequest(FFMPEG, media["video"], media["ad"], str(out), 0, 22.0, True)
+    with pytest.raises(mux.MuxError, match="Cancelled"):
+        mux.run_mux(req, cancel_event=cancel)
+    assert not out.exists()
+
+
+def test_job_poll_omits_log_unless_asked(client, media):
+    job_id = client.post("/api/create", json={
+        "video_path": media["video"], "audio_path": media["ad"], "offset_ms": 0, "chromecast": False,
+    }).get_json()["job_id"]
+    assert "log" not in client.get(f"/api/job/{job_id}").get_json()
+    assert "log" in client.get(f"/api/job/{job_id}?log=1").get_json()
+    deadline = time.time() + 60
+    while client.get(f"/api/job/{job_id}").get_json()["status"] == "running" and time.time() < deadline:
+        time.sleep(0.25)
+
+
+def test_ffmpeg_version_is_reported(client):
+    status = client.get("/api/status").get_json()
+    assert "ffmpeg_outdated" in status and status["ffmpeg_recommended_version"] == "9.0.1"

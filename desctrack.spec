@@ -15,6 +15,7 @@ block_cipher = None
 
 hiddenimports = [
     "services.ffmpeg_locator",
+    "services.ffmpeg_safety",
     "services.media_probe",
     "services.audio_sync",
     "services.preview",
@@ -50,7 +51,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig=hooksconfig,
     runtime_hooks=[],
-    excludes=["tkinter"],
+    excludes=["tkinter", "requests", "urllib3"],
     cipher=block_cipher,
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)

@@ -14,17 +14,15 @@ folder.
 
 from __future__ import annotations
 
+import os
 import threading
-import time
 
-import requests
 import webview
+from werkzeug.serving import make_server
 
 from server import create_app
 
 HOST = "127.0.0.1"
-PORT = 5891
-BASE_URL = f"http://{HOST}:{PORT}"
 
 VIDEO_FILE_TYPES = ("Video files (*.mp4;*.mkv;*.mov;*.avi;*.webm;*.m4v;*.wmv)", "All files (*.*)")
 AUDIO_FILE_TYPES = ("Audio files (*.wav;*.mp3;*.aac;*.flac;*.m4a;*.ogg;*.wma)", "All files (*.*)")
@@ -51,36 +49,38 @@ class Api:
         return self._pick(AUDIO_FILE_TYPES)
 
 
-def _run_flask():
-    app = create_app()
-    app.run(host=HOST, port=PORT, threaded=True, debug=False, use_reloader=False)
+def _start_server():
+    """Starts the Flask app on a free local port and returns the server.
 
-
-def _wait_for_server(timeout_seconds: float = 10.0) -> None:
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        try:
-            requests.get(BASE_URL + "/api/status", timeout=0.5)
-            return
-        except requests.RequestException:
-            time.sleep(0.1)
+    The listening socket is bound before this returns, so the window can load
+    the page straight away (no polling). Letting the OS pick the port means
+    DescTrack never collides with - or is impersonated by - another program
+    that happens to be using a fixed port. Set DESCTRACK_PORT to force one.
+    """
+    port = int(os.environ.get("DESCTRACK_PORT", "0"))
+    server = make_server(HOST, port, create_app(), threaded=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
 
 
 def main() -> None:
-    server_thread = threading.Thread(target=_run_flask, daemon=True)
-    server_thread.start()
-    _wait_for_server()
+    server = _start_server()
+    base_url = f"http://{HOST}:{server.server_port}"
+    print(f"DescTrack is running at {base_url}", flush=True)
 
     api = Api()
     webview.create_window(
         "DescTrack - Audio Description Muxer",
-        BASE_URL,
+        base_url,
         js_api=api,
         width=900,
         height=800,
         min_size=(720, 640),
     )
-    webview.start()
+    try:
+        webview.start()
+    finally:
+        server.shutdown()
 
 
 if __name__ == "__main__":

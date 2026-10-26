@@ -12,6 +12,8 @@ import re
 import subprocess
 from typing import Optional
 
+from .ffmpeg_safety import input_args
+
 _SILENCE_START_RE = re.compile(r"silence_start:\s*(-?[\d.]+)")
 _SILENCE_END_RE = re.compile(r"silence_end:\s*(-?[\d.]+)")
 
@@ -30,13 +32,19 @@ def detect_content_start_seconds(
     """Returns the estimated timestamp (seconds) where real audio content
     begins. 0.0 if the file doesn't open with silence at all."""
     args = [
-        ffmpeg_path, "-y",
-        "-i", media_path,
+        ffmpeg_path, "-nostdin", "-y",
         "-t", str(max_scan_seconds),
+        *input_args(media_path),
+        # Audio only: without -vn ffmpeg would also decode every video frame
+        # of the scanned window, which is most of the work for an HD film.
+        "-vn", "-sn", "-dn",
         "-af", f"silencedetect=noise={noise_floor_db}dB:d={min_silence_duration}",
         "-f", "null", "-",
     ]
-    result = subprocess.run(args, capture_output=True, text=True, errors="replace")
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, errors="replace", timeout=600)
+    except subprocess.TimeoutExpired:
+        return 0.0
     stderr = result.stderr or ""
 
     first_start = _first_match(_SILENCE_START_RE, stderr)

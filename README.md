@@ -31,7 +31,7 @@ DescTrack looks for ffmpeg in this order:
 
 If DescTrack cannot find ffmpeg, a message at the top of the page says so.
 
-Any recent ffmpeg works. On Windows it needs the MP3 and AAC encoders, which every ordinary Windows build has.
+Use ffmpeg 9.0.1 or newer. Older versions have publicly known security bugs (for example CVE-2026-64830 and CVE-2026-75141) that a booby-trapped video file could use to run code on your computer. DescTrack still works with older versions, but shows a warning at the top of the page. Some Linux distributions ship older versions with the fixes added; if yours does, the warning is safe to ignore. On Windows ffmpeg needs the MP3 and AAC encoders, which every ordinary Windows build has.
 
 ### The window
 
@@ -84,6 +84,14 @@ The page is divided by headings, so you can move between sections with your scre
 
 About the offset: a positive offset delays the described audio relative to the video; a negative offset trims the start of the described audio so it begins earlier. If the described file has an extra 1.5 seconds of silence or introduction at the start, the offset is -1500 ms.
 
+## Security
+
+DescTrack works entirely on your computer and never connects to the internet. Its window talks to a small web server inside DescTrack that only accepts connections from your own computer, picks a different free port each time it starts, and refuses requests from any other web page, so websites you visit can't control it.
+
+Video files are a common way to attack media programs, so DescTrack only lets ffmpeg open the file formats it needs (MP4/MOV, MKV/WebM, AVI, WMV/WMA, MPEG/VOB, MPEG-TS, FLV, Ogg, MP3, WAV, AIFF, AAC and FLAC), and only from local files. Even so, keep ffmpeg up to date, and be careful with video files from untrusted sources.
+
+To report a security problem, please open an issue on GitHub (or, for anything sensitive, contact the maintainer privately through GitHub).
+
 ## Building from source
 
 You need Python 3.10 or newer (the downloads are built with Python 3.14) and ffmpeg.
@@ -107,23 +115,24 @@ pyinstaller desctrack.spec         # build the app into dist/
 
 `pyinstaller desctrack.spec` makes `dist/DescTrack.exe` on Windows, `dist/DescTrack` on Linux and `dist/DescTrack.app` on a Mac. PyInstaller can only build for the system it runs on, so each one must be built on that system.
 
-Every push to GitHub runs the tests and builds all three on GitHub's Windows, Mac and Linux machines, and checks that each built app starts. Pushing a tag such as `v1.2.1` also attaches the three downloads to a new release.
+Every push to GitHub checks the Python packages for known security advisories with pip-audit, runs the tests, and builds all three on GitHub's Windows, Mac and Linux machines, and checks that each built app starts. Pushing a tag such as `v1.2.1` also attaches the three downloads to a new release.
 
 ### Testing in a browser
 
-`python server.py` starts just the part of DescTrack that does the work, at http://127.0.0.1:5891, without its window, so you can use the page in an ordinary browser (`python server.py --debug` turns on Flask's debug mode; set the `PORT` environment variable to use another port). A browser does not tell a web page where a chosen file is on disk, so in a browser the file buttons are only a best effort; the page has a test hook, `window.__setPairsForTesting([{video: "/path/to/video.mp4", audio: "/path/to/described.mp3"}])`, for filling in real paths from the developer console or an automated test.
+`python server.py` starts just the part of DescTrack that does the work, at http://127.0.0.1:5891 (or http://localhost:5891), without its window, so you can use the page in an ordinary browser (`python server.py --debug` turns on Flask's debug mode, which should only ever be used for development; set the `PORT` environment variable to use another port). The desktop app normally picks a free port at random; set `DESCTRACK_PORT` to make it use a fixed one. A browser does not tell a web page where a chosen file is on disk, so in a browser the file buttons are only a best effort; the page has a test hook, `window.__setPairsForTesting([{video: "/path/to/video.mp4", audio: "/path/to/described.mp3"}])`, for filling in real paths from the developer console or an automated test.
 
 The tests in `tests/` make short test media with ffmpeg and run the whole process through the real program: probing, auto-sync, silence detection, preview clips, and making the final file in both modes.
 
 ## How it works
 
-- `desktop.py` starts the program and opens its window with pywebview. It also provides the native file dialogs, which give the page the real location of each file so the result can be saved next to the video.
+- `desktop.py` starts the program on a free local port and opens its window with pywebview. It also provides the native file dialogs, which give the page the real location of each file so the result can be saved next to the video.
 - `server.py` is a small Flask web server that the page talks to. All of the work happens in the `services` folder:
   - `audio_sync.py` takes the first 90 seconds of both soundtracks at low quality and finds the offset where they match best (cross-correlation with numpy), within 20 seconds either way.
   - `silence.py` uses ffmpeg's silence detection to find where the sound starts in each file, so previews start somewhere audible.
   - `preview.py` cuts matching short clips from both files at the chosen offset for the sync mixer.
   - `mux.py` runs ffmpeg to make the final file, and reports its progress.
   - `media_probe.py` and `ffmpeg_locator.py` find each file's length and the ffmpeg programs.
+  - `ffmpeg_safety.py` restricts what ffmpeg may open (see Security) and checks its version.
 - The page itself is in the `static` folder.
 
 ## Licence and credits
@@ -136,6 +145,5 @@ DescTrack is built with:
 - [pywebview](https://pywebview.flowrl.com) for the window (BSD licence).
 - [Flask](https://flask.palletsprojects.com) for the built-in web server (BSD licence).
 - [NumPy](https://numpy.org) for the automatic sync (BSD licence).
-- [Requests](https://requests.readthedocs.io) (Apache 2.0 licence).
 - [PyGObject](https://pygobject.gnome.org) and WebKitGTK on Linux (LGPL licence).
 - [PyInstaller](https://pyinstaller.org) to build the downloads (GPL licence with an exception that allows building programs under any licence).

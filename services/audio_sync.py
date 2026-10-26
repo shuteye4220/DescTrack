@@ -11,14 +11,14 @@ a negative offset means its lead-in should be trimmed so it starts earlier.
 
 from __future__ import annotations
 
-import os
 import subprocess
-import tempfile
-import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 import numpy as np
+
+from .ffmpeg_safety import input_args
 
 SAMPLE_RATE_HZ = 8000
 
@@ -46,8 +46,12 @@ def estimate_offset(
             log(msg)
 
     report("Extracting reference audio for analysis...")
-    reference = _extract_mono_pcm(ffmpeg_path, video_path, analysis_seconds)
-    target = _extract_mono_pcm(ffmpeg_path, ad_audio_path, analysis_seconds)
+    # Decode both files at the same time - each is a separate ffmpeg process.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        reference_job = pool.submit(_extract_mono_pcm, ffmpeg_path, video_path, analysis_seconds)
+        target_job = pool.submit(_extract_mono_pcm, ffmpeg_path, ad_audio_path, analysis_seconds)
+        reference = reference_job.result()
+        target = target_job.result()
 
     if len(reference) < SAMPLE_RATE_HZ // 2 or len(target) < SAMPLE_RATE_HZ // 2:
         raise AudioSyncError(
@@ -63,30 +67,26 @@ def estimate_offset(
 
 
 def _extract_mono_pcm(ffmpeg_path: str, media_path: str, seconds: float) -> np.ndarray:
-    tmp_path = os.path.join(tempfile.gettempdir(), f"desctrack_sync_{uuid.uuid4().hex}.pcm")
+    # Raw 16-bit samples are streamed straight from ffmpeg's stdout (at most
+    # ~1.4 MB for 90 s at 8 kHz), so no temporary file is needed.
+    args = [
+        ffmpeg_path, "-nostdin", "-y",
+        "-t", str(seconds),
+        *input_args(media_path),
+        "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE_HZ),
+        "-f", "s16le",
+        "pipe:1",
+    ]
     try:
-        args = [
-            ffmpeg_path, "-y",
-            "-i", media_path,
-            "-t", str(seconds),
-            "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE_HZ),
-            "-f", "s16le",
-            tmp_path,
-        ]
-        result = subprocess.run(args, capture_output=True, text=True, errors="replace")
-        if result.returncode != 0 or not os.path.isfile(tmp_path):
-            raise AudioSyncError(
-                f'ffmpeg could not extract audio from "{media_path}":\n{result.stderr}'
-            )
-        with open(tmp_path, "rb") as f:
-            raw = f.read()
-        return np.frombuffer(raw, dtype="<i2").astype(np.float64) / 32768.0
-    finally:
-        try:
-            if os.path.isfile(tmp_path):
-                os.remove(tmp_path)
-        except OSError:
-            pass
+        result = subprocess.run(args, capture_output=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        raise AudioSyncError(f'Timed out decoding audio from "{media_path}".')
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        raise AudioSyncError(f'ffmpeg could not extract audio from "{media_path}":\n{stderr}')
+    raw = result.stdout
+    raw = raw[: len(raw) - (len(raw) % 2)]  # whole 16-bit samples only
+    return np.frombuffer(raw, dtype="<i2").astype(np.float64) / 32768.0
 
 
 def _next_pow2(value: int) -> int:
