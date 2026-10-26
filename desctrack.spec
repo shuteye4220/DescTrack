@@ -76,8 +76,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "DescTrack",
             "CFBundleDisplayName": "DescTrack",
-            "CFBundleShortVersionString": "1.2",
-            "CFBundleVersion": "1.2",
+            "CFBundleShortVersionString": "1.2.1",
+            "CFBundleVersion": "1.2.1",
             "NSHighResolutionCapable": True,
         },
     )
