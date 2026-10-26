@@ -1,0 +1,125 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux
+          - os: macos-latest
+            name: mac
+          - os: windows-latest
+            name: windows
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install system packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg gir1.2-webkit2-4.1 gir1.2-girepository-3.0 \
+            libgirepository-2.0-dev libcairo2-dev pkg-config xvfb dbus-x11 at-spi2-core
+
+      - name: Install ffmpeg (Mac)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run the tests
+        run: python -m pytest -v
+
+      - name: Build the app
+        run: pyinstaller --noconfirm --clean desctrack.spec
+
+      - name: Check the built app starts
+        run: |
+          case "$RUNNER_OS" in
+            Linux)   APP=(xvfb-run -a dbus-run-session -- dist/DescTrack) ;;
+            macOS)   APP=(dist/DescTrack.app/Contents/MacOS/DescTrack) ;;
+            Windows) APP=(dist/DescTrack.exe) ;;
+          esac
+          "${APP[@]}" > app.log 2>&1 &
+          PID=$!
+          ok=""
+          for i in $(seq 90); do
+            if curl -sf http://127.0.0.1:5891/api/status; then ok=1; break; fi
+            sleep 1
+          done
+          echo
+          # The window starts after the server; make sure the app is still
+          # running (i.e. the native window opened rather than crashing).
+          sleep 10
+          alive=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            tasklist //FI "IMAGENAME eq DescTrack.exe" | grep -qi DescTrack.exe && alive=1
+            taskkill //F //IM DescTrack.exe || true
+          else
+            kill -0 "$PID" 2>/dev/null && alive=1
+            pkill -f "dist/DescTrack" || true
+          fi
+          cat app.log || true
+          [ -n "$ok" ] && [ -n "$alive" ]
+
+      - name: Package the download
+        run: |
+          mkdir -p release
+          case "$RUNNER_OS" in
+            Linux)   tar -czf release/DescTrack-linux-x86_64.tar.gz -C dist DescTrack ;;
+            macOS)   ditto -c -k --keepParent dist/DescTrack.app release/DescTrack-mac.zip ;;
+            Windows) powershell -Command "Compress-Archive -Path dist/DescTrack.exe -DestinationPath release/DescTrack-windows.zip" ;;
+          esac
+          ls -l release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DescTrack-${{ matrix.name }}
+          path: release/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -l release
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" \
+              --title "DescTrack ${GITHUB_REF_NAME}" --generate-notes
+          fi

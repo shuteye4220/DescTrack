@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DescTrack</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<header class="app-header">
+  <h1>DescTrack</h1>
+  <p class="tagline">Mux audio description tracks into videos, with an accessible sync mixer. Process one file or a whole batch.</p>
+</header>
+
+<main id="main">
+  <div id="status-banner" class="banner banner-error" role="alert" hidden></div>
+
+  <section aria-labelledby="pairs-heading" class="card">
+    <h2 id="pairs-heading">Video / AD audio pairs</h2>
+    <p class="help-text">
+      Add one pair per video you want to process. Each pair is auto-synced automatically as soon as
+      both files are chosen - the sync mixer is only there if you need to check or fine-tune a
+      particular pair by ear. The Chromecast setting and Start button below apply to the whole batch
+      at once.
+    </p>
+
+    <div id="pairs-list"></div>
+
+    <button type="button" id="btn-add-pair">Add another pair</button>
+  </section>
+
+  <section aria-labelledby="output-heading" class="card">
+    <h2 id="output-heading">Output</h2>
+
+    <div class="field-row checkbox-row">
+      <input type="checkbox" id="chromecast" aria-describedby="chromecast-help">
+      <label for="chromecast">Chromecast ready (re-encode to H.264 / MP4)</label>
+    </div>
+    <p id="chromecast-help" class="help-text">
+      Applies to every pair in the batch. When checked, each output is re-encoded to H.264 video in
+      an MP4 container for broadcasting to a Chromecast device. When unchecked, each original
+      video's format and codec are preserved and only the audio track is replaced.
+    </p>
+
+    <div class="button-row">
+      <button type="button" id="btn-start" disabled>Start process</button>
+      <button type="button" id="btn-open-folder" disabled>Open last output's folder</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="progress-heading" class="card">
+    <h2 id="progress-heading">Render progress</h2>
+    <p id="batch-status" class="help-text">No batch running yet.</p>
+    <div class="progress-row">
+      <label for="progress-bar">Current pair progress</label>
+      <progress id="progress-bar" value="0" max="100">0%</progress>
+      <span id="progress-text">0%</span>
+    </div>
+    <p id="progress-detail" class="help-text"></p>
+  </section>
+
+  <section aria-labelledby="log-heading" class="card">
+    <h2 id="log-heading">Activity log</h2>
+    <div id="activity-log" class="activity-log" role="log" aria-live="polite" aria-relevant="additions" tabindex="0"></div>
+  </section>
+</main>
+
+<footer class="app-footer">
+  <p>DescTrack v1.2 (web edition) &mdash; requires ffmpeg/ffprobe alongside the app. See README.md.</p>
+</footer>
+
+<!-- Template for one video/AD pair row; cloned by app.js for each pair added.
+     Using a <template> keeps this markup out of the accessibility tree until
+     it's actually cloned into #pairs-list, and keeps app.js free of an
+     inline HTML string to maintain. -->
+<template id="pair-row-template">
+  <div class="pair-row" data-pair-row>
+    <h3 class="pair-heading" data-pair-heading></h3>
+
+    <div class="field-row">
+      <button type="button" class="btn-pick-video" data-pick-video>Choose video file&hellip;</button>
+      <span class="path-display" data-video-display>No file selected</span>
+    </div>
+
+    <div class="field-row">
+      <button type="button" class="btn-pick-audio" data-pick-audio>Choose audio description file&hellip;</button>
+      <span class="path-display" data-audio-display>No file selected</span>
+    </div>
+
+    <div class="field-row">
+      <button type="button" class="btn-open-mixer" data-open-mixer disabled>Open sync mixer&hellip;</button>
+      <span class="offset-summary" data-offset-summary>Offset: 0 ms</span>
+      <button type="button" class="btn-remove-pair" data-remove-pair>Remove this pair</button>
+    </div>
+
+    <!-- Fallback for environments without the native (pywebview) file dialog bridge,
+         e.g. running the Flask server directly in a browser during development.
+         Browsers do not expose a full filesystem path from these for security
+         reasons, so this path is best-effort only; the packaged desktop app
+         always uses the native dialogs above instead. -->
+    <input type="file" class="visually-hidden" data-video-file-input accept="video/*" tabindex="-1" aria-hidden="true">
+    <input type="file" class="visually-hidden" data-audio-file-input accept="audio/*" tabindex="-1" aria-hidden="true">
+  </div>
+</template>
+
+<dialog id="mixer-dialog" aria-labelledby="mixer-dialog-heading" class="mixer-dialog">
+  <h2 id="mixer-dialog-heading">Sync mixer</h2>
+  <p id="mixer-dialog-subtitle" class="help-text"></p>
+  <p class="help-text">
+    Tab to the offset control below, then use the Left/Right (or Up/Down) arrow keys to nudge it;
+    keep a key held to nudge in progressively wider increments. Press Enter to lock in the offset.
+    Press Escape at any time to close this dialog.
+  </p>
+
+  <div class="field-row">
+    <label for="preview-position">Preview position (seconds from start)</label>
+    <input type="number" id="preview-position" min="0" step="1" value="0" inputmode="decimal" aria-describedby="preview-position-help">
+  </div>
+  <p id="preview-position-help" class="help-text">
+    Automatically set past any leading silence in either file when both are selected, so the preview
+    has something audible to check. Change it any time; your value is kept from then on.
+  </p>
+
+  <div class="field-row">
+    <label for="preview-duration">Preview clip length</label>
+    <select id="preview-duration">
+      <option value="10">10 seconds</option>
+      <option value="15" selected>15 seconds</option>
+      <option value="30">30 seconds</option>
+    </select>
+  </div>
+
+  <div class="offset-spin-wrap">
+    <span id="offset-spin-label" class="offset-spin-label">AD audio offset</span>
+    <div
+      id="offset-spin"
+      class="offset-spin"
+      role="spinbutton"
+      tabindex="0"
+      aria-labelledby="offset-spin-label"
+      aria-describedby="offset-help"
+      aria-valuemin="-600000"
+      aria-valuemax="600000"
+      aria-valuenow="0"
+      aria-valuetext="0 milliseconds"
+    >0 ms</div>
+  </div>
+  <p id="offset-help" class="help-text">
+    Positive delays the AD track relative to the video. Negative trims its start so it begins earlier.
+  </p>
+
+  <div class="field-row">
+    <label for="offset-typed">Or type an exact offset (milliseconds)</label>
+    <input type="number" id="offset-typed" value="0" step="10" min="-600000" max="600000">
+  </div>
+
+  <div class="button-row" role="group" aria-label="Sync mixer preview actions">
+    <button type="button" id="btn-auto-sync">Auto-sync (best guess)</button>
+    <button type="button" id="btn-play-preview">Play preview with current offset</button>
+    <button type="button" id="btn-stop-preview">Stop preview</button>
+  </div>
+
+  <div class="button-row" role="group" aria-label="Sync mixer dialog actions">
+    <button type="button" id="btn-lock-offset">Lock offset (Enter)</button>
+    <button type="button" id="btn-close-mixer">Close (Escape)</button>
+  </div>
+</dialog>
+
+<!-- Short, quiet completion tone played once per pair that finishes rendering
+     successfully (see app.js). Not tied to any live region - it's a
+     supplementary cue, not a replacement for the activity log message that
+     accompanies it. -->
+<audio id="complete-sound" src="/static/complete.wav" preload="auto" aria-hidden="true"></audio>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

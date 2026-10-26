@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# PyInstaller output
+build/
+dist/
+
+# A portable ffmpeg dropped next to the source for local testing
+ffmpeg
+ffprobe
+ffmpeg.exe
+ffprobe.exe
+ffmpeg/
+
+# OS clutter
+.DS_Store
+Thumbs.db

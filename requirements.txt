@@ -1,0 +1,10 @@
+# Runtime
+flask>=3.0
+numpy>=1.26
+requests>=2.31
+pywebview>=5.0
+
+# Linux only: the GTK backend for pywebview. Needs the system packages listed
+# in README.md (WebKitGTK and the GObject introspection headers).
+PyGObject>=3.50; sys_platform == "linux"
+pycairo>=1.26; sys_platform == "linux"

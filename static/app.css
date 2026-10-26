@@ -1,0 +1,347 @@
+/* DescTrack - accessible styling.
+   Light palette defined on :root; dark palette overrides under
+   prefers-color-scheme. Contrast ratios were chosen conservatively and are
+   re-checked automatically with axe-core during development (see tests/). */
+
+:root {
+  --color-bg: #ffffff;
+  --color-surface: #f4f6fb;
+  --color-border: #b9c2d0;
+  --color-text: #14181f;
+  --color-text-muted: #3c4656;
+  --color-primary: #0b3d91;
+  --color-primary-text: #ffffff;
+  --color-primary-hover: #082c69;
+  --color-danger-bg: #7a0d16;
+  --color-danger-text: #ffffff;
+  --color-focus: #0b3d91;
+  --font-stack: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #14181f;
+    --color-surface: #1e2430;
+    --color-border: #4a5568;
+    --color-text: #f2f4f8;
+    --color-text-muted: #c3cad6;
+    --color-primary: #6ea8ff;
+    --color-primary-text: #0b1220;
+    --color-primary-hover: #8fbcff;
+    --color-danger-bg: #ff8a8a;
+    --color-danger-text: #2a0000;
+    --color-focus: #ffd166;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-stack);
+  line-height: 1.5;
+}
+
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  padding: 0.75rem 1rem;
+  z-index: 100;
+  border-radius: 0 0 0.25rem 0;
+}
+
+.skip-link:focus {
+  left: 0;
+}
+
+.app-header,
+.app-footer {
+  padding: 1rem 1.25rem;
+}
+
+.app-header h1 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.75rem;
+}
+
+.tagline {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+main {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 0 1.25rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 1.25rem;
+}
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+}
+
+.field-row label {
+  min-width: 16rem;
+  font-weight: 600;
+}
+
+.field-row input[type="number"],
+.field-row select {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.25rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-width: 8rem;
+}
+
+.checkbox-row {
+  align-items: center;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.help-text {
+  margin: 0.1rem 0 0.9rem 0;
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+  max-width: 42rem;
+}
+
+.path-display {
+  color: var(--color-text-muted);
+  word-break: break-all;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.6rem 1rem;
+  min-height: 2.5rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.progress-row label {
+  font-weight: 600;
+}
+
+progress {
+  flex: 1 1 auto;
+  min-width: 10rem;
+  height: 1.1rem;
+  accent-color: var(--color-primary);
+}
+
+.activity-log {
+  border: 1px solid var(--color-border);
+  border-radius: 0.3rem;
+  background: var(--color-bg);
+  padding: 0.75rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.88rem;
+}
+
+.activity-log p {
+  margin: 0 0 0.35rem 0;
+}
+
+.activity-log p:last-child {
+  margin-bottom: 0;
+}
+
+.banner {
+  padding: 0.9rem 1rem;
+  border-radius: 0.4rem;
+  font-weight: 600;
+}
+
+.banner-error {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 30rem) {
+  .field-row label {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+}
+
+/* ---- Sync mixer dialog ---- */
+
+.mixer-dialog {
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  padding: 1.5rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  max-width: 34rem;
+  width: 90vw;
+}
+
+.mixer-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.mixer-dialog h2 {
+  margin-top: 0;
+}
+
+.offset-spin-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 1rem 0 0.25rem;
+}
+
+.offset-spin-label {
+  font-weight: 600;
+}
+
+.offset-spin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 12rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+  border: 2px solid var(--color-border);
+  border-radius: 0.4rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: default;
+  user-select: none;
+}
+
+.offset-spin:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Batch pairs ---- */
+
+#pairs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.pair-row {
+  border: 1px solid var(--color-border);
+  border-radius: 0.4rem;
+  background: var(--color-bg);
+  padding: 1rem;
+}
+
+.pair-heading {
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+}
+
+.offset-summary {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-remove-pair {
+  background: transparent;
+  color: var(--color-danger-bg);
+  border-color: var(--color-danger-bg);
+  margin-left: auto;
+}
+
+.btn-remove-pair:hover:not(:disabled) {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
+#batch-status {
+  font-weight: 600;
+  color: var(--color-text);
+}
