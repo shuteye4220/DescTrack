@@ -187,8 +187,8 @@ def test_dns_rebinding_host_is_rejected(client):
     assert response.status_code == 403
 
 
-def test_own_origin_is_allowed(client):
-    response = client.post("/api/output-path", json={"video_path": "/x.mp4"},
+def test_own_origin_is_allowed(client, tmp_path):
+    response = client.post("/api/output-path", json={"video_path": str(tmp_path / "x.mp4")},
                            headers={"Host": "127.0.0.1:5891", "Origin": "http://127.0.0.1:5891"})
     assert response.status_code == 200
 

@@ -2,3 +2,4 @@
 pyinstaller>=6.10
 pytest>=8.0
 pip-audit>=2.7
+pytest-github-actions-annotate-failures>=0.2
