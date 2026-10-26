@@ -115,7 +115,7 @@ pyinstaller desctrack.spec         # build the app into dist/
 
 `pyinstaller desctrack.spec` makes `dist/DescTrack.exe` on Windows, `dist/DescTrack` on Linux and `dist/DescTrack.app` on a Mac. PyInstaller can only build for the system it runs on, so each one must be built on that system.
 
-Every push to GitHub checks the Python packages for known security advisories with pip-audit, runs the tests, and builds all three on GitHub's Windows, Mac and Linux machines, and checks that each built app starts. Pushing a tag such as `v1.2.1` also attaches the three downloads to a new release.
+Every push to GitHub checks the Python packages for known security advisories with pip-audit, runs the tests, and builds all three on GitHub's Windows, Mac and Linux machines, and checks that each built app starts. To publish a new version, change the number in the `VERSION` file (and optionally add release notes as `release-notes/v<version>.md`) and push to `main`: GitHub then builds the three downloads and publishes them as a new release, tagged with that version. Pushing a tag such as `v1.2.2` does the same.
 
 ### Testing in a browser
 
