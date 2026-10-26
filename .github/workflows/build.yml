@@ -54,7 +54,16 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       - name: Check dependencies for known vulnerabilities
-        run: pip-audit --progress-spinner off  # audits everything installed above
+        # Audits everything installed above. Retries once in case PyPI's
+        # advisory service is briefly unreachable, and shows any findings
+        # as annotations on the run.
+        run: |
+          pip-audit --progress-spinner off > audit.txt 2>&1 || { sleep 20; pip-audit --progress-spinner off > audit.txt 2>&1; } || {
+            cat audit.txt
+            tail -n 20 audit.txt | while IFS= read -r line; do echo "::error title=pip-audit::$line"; done
+            exit 1
+          }
+          cat audit.txt
 
       - name: Run the tests
         run: python -m pytest -v
